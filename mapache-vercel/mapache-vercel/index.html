@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mapache vs Monstruos</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: #12141c;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: Arial, Helvetica, sans-serif;
+    color: #f0f0f0;
+  }
+  #contenedor {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+  }
+  canvas {
+    background: #191c26;
+    border-radius: 8px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+    touch-action: none;
+  }
+  #titulo {
+    font-size: 20px;
+    letter-spacing: 1px;
+  }
+  #ayuda {
+    font-size: 13px;
+    color: #aaa;
+    text-align: center;
+    max-width: 800px;
+  }
+  #controles-tactiles {
+    display: none;
+    gap: 16px;
+    margin-top: 6px;
+  }
+  #controles-tactiles button {
+    width: 70px;
+    height: 50px;
+    font-size: 18px;
+    border-radius: 8px;
+    border: none;
+    background: #2c3040;
+    color: #fff;
+  }
+  @media (pointer: coarse) {
+    #controles-tactiles { display: flex; }
+  }
+</style>
+</head>
+<body>
+<div id="contenedor">
+  <div id="titulo">Mapache vs Monstruos</div>
+  <canvas id="juego" width="800" height="600"></canvas>
+  <div id="ayuda">
+    Flechas / A D: mover &nbsp;|&nbsp; Espacio: disparar &nbsp;|&nbsp; R: reiniciar al terminar
+  </div>
+  <div id="controles-tactiles">
+    <button id="btn-izq">◀</button>
+    <button id="btn-disparo">●</button>
+    <button id="btn-der">▶</button>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById("juego");
+const ctx = canvas.getContext("2d");
+const ANCHO = canvas.width;
+const ALTO = canvas.height;
+
+const COLOR_FONDO = "#191c26";
+const COLOR_TEXTO = "#f0f0f0";
+const COLOR_MAPACHE_CUERPO = "#6e6e78";
+const COLOR_MAPACHE_PANZA = "#e1e1e1";
+const COLOR_MAPACHE_ANTIFAZ = "#1e1e23";
+const COLOR_PROYECTIL = "#ffd25a";
+const COLOR_VIDA = "#dc4646";
+
+const MONSTRUO_COLORES = ["#9636c8", "#3caa82", "#c85a3c", "#4678c8"];
+
+const VELOCIDAD_JUGADOR = 6;
+const VELOCIDAD_PROYECTIL = 9;
+const VIDAS_INICIALES = 3;
+
+let teclas = {};
+
+class Jugador {
+  constructor() {
+    this.ancho = 60;
+    this.alto = 45;
+    this.x = ANCHO / 2 - this.ancho / 2;
+    this.y = ALTO - 70;
+    this.vidas = VIDAS_INICIALES;
+  }
+
+  mover() {
+    if (teclas["ArrowLeft"] || teclas["a"] || teclas["A"]) this.x -= VELOCIDAD_JUGADOR;
+    if (teclas["ArrowRight"] || teclas["d"] || teclas["D"]) this.x += VELOCIDAD_JUGADOR;
+    this.x = Math.max(0, Math.min(ANCHO - this.ancho, this.x));
+  }
+
+  rect() {
+    return { x: this.x, y: this.y, w: this.ancho, h: this.alto };
+  }
+
+  dibujar() {
+    const cx = this.x + this.ancho / 2;
+    const cy = this.y + this.alto / 2;
+
+    ctx.fillStyle = COLOR_MAPACHE_CUERPO;
+    dibujarElipse(cx, cy, this.ancho / 2, this.alto / 2);
+
+    ctx.fillStyle = COLOR_MAPACHE_PANZA;
+    dibujarElipse(cx, cy + 2, (this.ancho - 28) / 2, (this.alto - 18) / 2);
+
+    ctx.fillStyle = COLOR_MAPACHE_CUERPO;
+    dibujarCirculo(this.x + 8, this.y + 6, 8);
+    dibujarCirculo(this.x + this.ancho - 8, this.y + 6, 8);
+
+    ctx.fillStyle = COLOR_MAPACHE_ANTIFAZ;
+    dibujarElipse(cx, this.y + 14, 18, 6);
+
+    ctx.fillStyle = "#ffffff";
+    dibujarCirculo(cx - 8, this.y + 13, 2);
+    dibujarCirculo(cx + 8, this.y + 13, 2);
+
+    for (let i = 0; i < 4; i++) {
+      ctx.fillStyle = i % 2 === 0 ? COLOR_MAPACHE_CUERPO : "#e6e6e6";
+      ctx.fillRect(this.x - 10, this.y + 20 + i * 6, 10, 6);
+    }
+  }
+}
+
+class Proyectil {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.radio = 6;
+  }
+
+  actualizar() {
+    this.y -= VELOCIDAD_PROYECTIL;
+  }
+
+  dibujar() {
+    ctx.fillStyle = COLOR_PROYECTIL;
+    dibujarCirculo(this.x, this.y, this.radio);
+  }
+}
+
+class Monstruo {
+  constructor(nivelDificultad) {
+    this.tamano = 28 + Math.random() * 18;
+    this.x = Math.random() * (ANCHO - this.tamano);
+    this.y = -this.tamano;
+    this.color = MONSTRUO_COLORES[Math.floor(Math.random() * MONSTRUO_COLORES.length)];
+    this.velocidad = 1.5 + Math.random() * 1.5 + nivelDificultad * 0.15;
+    this.puntos = Math.max(5, Math.round(60 - this.tamano));
+  }
+
+  rect() {
+    return { x: this.x, y: this.y, w: this.tamano, h: this.tamano };
+  }
+
+  actualizar() {
+    this.y += this.velocidad;
+  }
+
+  dibujar() {
+    const cx = this.x + this.tamano / 2;
+    const cy = this.y + this.tamano / 2;
+
+    ctx.fillStyle = this.color;
+    dibujarElipse(cx, cy, this.tamano / 2, this.tamano / 2);
+
+    const ojoR = Math.max(3, this.tamano / 10);
+    const offX = this.tamano / 5;
+
+    ctx.fillStyle = "#ffffff";
+    dibujarCirculo(cx - offX, cy - 4, ojoR);
+    dibujarCirculo(cx + offX, cy - 4, ojoR);
+
+    ctx.fillStyle = "#000000";
+    dibujarCirculo(cx - offX, cy - 4, Math.max(1, ojoR / 2));
+    dibujarCirculo(cx + offX, cy - 4, Math.max(1, ojoR / 2));
+
+    ctx.strokeStyle = "#000000";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy + 4, this.tamano / 3, 0.3, 2.8);
+    ctx.stroke();
+  }
+}
+
+function dibujarElipse(cx, cy, rx, ry) {
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function dibujarCirculo(cx, cy, r) {
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function colisionRectRect(a, b) {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+
+function colisionRectPunto(r, px, py) {
+  return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
+}
+
+let estado;
+
+function reiniciarEstado() {
+  estado = {
+    jugador: new Jugador(),
+    proyectiles: [],
+    monstruos: [],
+    puntaje: 0,
+    tiempoSpawn: 0,
+    gameOver: false,
+  };
+}
+
+function dibujarHud() {
+  ctx.fillStyle = COLOR_TEXTO;
+  ctx.font = "22px Arial";
+  ctx.textAlign = "left";
+  ctx.fillText("Puntos: " + estado.puntaje, 16, 32);
+
+  for (let i = 0; i < estado.jugador.vidas; i++) {
+    ctx.fillStyle = COLOR_VIDA;
+    dibujarCirculo(ANCHO - 30 - i * 30, 26, 10);
+  }
+}
+
+function dibujarGameOver() {
+  ctx.fillStyle = "rgba(0,0,0,0.6)";
+  ctx.fillRect(0, 0, ANCHO, ALTO);
+
+  ctx.fillStyle = COLOR_TEXTO;
+  ctx.textAlign = "center";
+
+  ctx.font = "bold 42px Arial";
+  ctx.fillText("Juego terminado", ANCHO / 2, ALTO / 2 - 60);
+
+  ctx.font = "24px Arial";
+  ctx.fillText("Puntaje final: " + estado.puntaje, ANCHO / 2, ALTO / 2);
+
+  ctx.font = "18px Arial";
+  ctx.fillText("Presiona R para reiniciar", ANCHO / 2, ALTO / 2 + 40);
+}
+
+function disparar() {
+  if (estado.gameOver) return;
+  const j = estado.jugador;
+  estado.proyectiles.push(new Proyectil(j.x + j.ancho / 2, j.y));
+}
+
+function actualizar() {
+  if (estado.gameOver) return;
+
+  estado.jugador.mover();
+
+  estado.tiempoSpawn++;
+  const nivelDificultad = Math.floor(estado.puntaje / 100);
+  const frecuenciaSpawn = Math.max(20, 55 - nivelDificultad * 3);
+  if (estado.tiempoSpawn >= frecuenciaSpawn) {
+    estado.tiempoSpawn = 0;
+    estado.monstruos.push(new Monstruo(nivelDificultad));
+  }
+
+  estado.proyectiles = estado.proyectiles.filter(p => {
+    p.actualizar();
+    return p.y > -10;
+  });
+
+  const jugadorRect = estado.jugador.rect();
+
+  estado.monstruos = estado.monstruos.filter(m => {
+    m.actualizar();
+
+    if (colisionRectRect(m.rect(), jugadorRect)) {
+      estado.jugador.vidas--;
+      if (estado.jugador.vidas <= 0) estado.gameOver = true;
+      return false;
+    }
+
+    if (m.y > ALTO) return false;
+
+    for (let i = 0; i < estado.proyectiles.length; i++) {
+      const p = estado.proyectiles[i];
+      if (colisionRectPunto(m.rect(), p.x, p.y)) {
+        estado.puntaje += m.puntos;
+        estado.proyectiles.splice(i, 1);
+        return false;
+      }
+    }
+
+    return true;
+  });
+}
+
+function dibujar() {
+  ctx.fillStyle = COLOR_FONDO;
+  ctx.fillRect(0, 0, ANCHO, ALTO);
+
+  estado.monstruos.forEach(m => m.dibujar());
+  estado.proyectiles.forEach(p => p.dibujar());
+  estado.jugador.dibujar();
+  dibujarHud();
+
+  if (estado.gameOver) dibujarGameOver();
+}
+
+function bucle() {
+  actualizar();
+  dibujar();
+  requestAnimationFrame(bucle);
+}
+
+window.addEventListener("keydown", (e) => {
+  teclas[e.key] = true;
+  if (e.key === " ") {
+    e.preventDefault();
+    disparar();
+  }
+  if ((e.key === "r" || e.key === "R") && estado.gameOver) {
+    reiniciarEstado();
+  }
+});
+
+window.addEventListener("keyup", (e) => {
+  teclas[e.key] = false;
+});
+
+document.getElementById("btn-izq").addEventListener("touchstart", () => teclas["ArrowLeft"] = true);
+document.getElementById("btn-izq").addEventListener("touchend", () => teclas["ArrowLeft"] = false);
+document.getElementById("btn-der").addEventListener("touchstart", () => teclas["ArrowRight"] = true);
+document.getElementById("btn-der").addEventListener("touchend", () => teclas["ArrowRight"] = false);
+document.getElementById("btn-disparo").addEventListener("touchstart", (e) => { e.preventDefault(); disparar(); });
+
+reiniciarEstado();
+bucle();
+</script>
+</body>
+</html>
